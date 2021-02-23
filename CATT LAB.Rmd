@@ -1,0 +1,242 @@
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+
+```{r}
+# Load the libraries
+
+library('tidyverse')
+library('tidymodels')
+library(lubridate)
+
+```
+
+Load the data 
+```{r}
+
+
+dfb_org <- 
+  read_csv("bike-share.csv")
+
+```
+
+
+Data preparation
+```{r}
+# Add the COUNT and MONTH variables
+
+dfb_org <-
+  dfb_org %>% 
+  mutate(COUNT = CASUAL + REGISTERED, MONTH = months(DATE))
+
+```
+
+
+```{r}
+# Standardize the 'TEMP', 'ATEMP', 'HUMIDITY', and 'WINDSPEED' columns
+
+dfb_std <- 
+  dfb_org %>% 
+  recipe(COUNT ~ .) %>% 
+  step_normalize(TEMP, ATEMP, HUMIDITY, WINDSPEED) %>% 
+  prep() %>% 
+  bake(dfb_org)
+
+dfb_std
+```
+
+
+Basic regression model
+
+```{r}
+ linear_model <- 
+  linear_reg() %>% 
+  set_engine("lm")
+
+ 
+fit_all <-
+  linear_model %>% 
+  fit(COUNT ~ ., data = dfb_std) 
+
+summary(fit_all$fit)
+```
+
+Working with data and exploratory analysis:
+
+```{r}
+
+#Add a new variable and call it BADWEATHER, which is “YES” if there is light or heavy rain or snow (i.e., if WEATHERSIT is 3 or 4), and “NO” otherwise (i.e., if WEATHERSIT is 1 or 2). You know what functions to use at this step.
+dfb_org <-
+dfb_org %>%
+  mutate(BADWEATHER= ifelse(WEATHERSIT <= 2, 'NO', 'YES'))
+
+dfb_org
+```
+
+Scatterplot of COUNT (y-axis) and ATEMP (x-axis).
+```{r}
+
+ dfb_org %>%
+	ggplot(mapping=aes(x=ATEMP, y=COUNT, color=BADWEATHER)) +
+	geom_point() 
+       
+```
+
+
+Casual Riders Scatterplot
+
+```{r}
+dfb_org %>%
+	ggplot(mapping=aes(x=ATEMP, y=CASUAL, color=BADWEATHER)) +
+	geom_point()
+
+
+```
+
+Registered Users Sactterplot
+
+```{r}
+dfb_org %>%
+	ggplot(mapping=aes(x=ATEMP, y=REGISTERED, color=BADWEATHER)) +
+	geom_point()
+
+```
+
+Linear Model
+
+```{r}
+model_updated_tr <- lm(data=dfb_org, CASUAL~ATEMP)
+model_updated_tr
+```
+
+ 
+```{r}
+model_updated_tr <- lm(data=dfb_org, REGISTERED~ATEMP)
+model_updated_tr
+```
+ 
+Dummy Variable Creation for Linear Model 
+
+```{r}
+y <- model.matrix(~dfb_org$BADWEATHER+0, data= dfb_org)
+new_df <- data.frame(dfb_org, y)
+model_Weather_Casual <- lm(CASUAL~ new_df$dfb_org.BADWEATHERYES, data = new_df)
+summary(model_Weather_Casual)
+
+model_Weather_Registered <- lm(REGISTERED ~ new_df$dfb_org.BADWEATHERYES, data = new_df)
+summary(model_Weather_Registered)
+```
+ 
+ 
+ 
+```{r}
+max(dfb_org$CASUAL)
+
+max(dfb_org$REGISTERED)
+```
+ 
+Trend Line
+
+```{r}
+dfb_org %>%
+	ggplot(mapping=aes(x=ATEMP, y=COUNT)) +
+	geom_smooth()
+
+```
+
+Adding Variables to the Model
+
+```{r}
+model_Linear <- lm(COUNT ~ MONTH+WEEKDAY+BADWEATHER+TEMP+ATEMP+HUMIDITY, data = dfb_org)
+summary(model_Linear)
+```
+
+
+```{r}
+par(mfrow = c(2, 2))
+plot(model_Linear)
+```
+
+
+```{r}
+model_Linear <- lm(COUNT ~ BADWEATHER, data = dfb_org)
+summary(model_Linear)
+```
+
+
+
+```{r}
+y <- lm(COUNT~ BADWEATHER+WEEKDAY+BADWEATHER*WEEKDAY, data= dfb_org)
+summary(y)
+```
+
+
+Predictive Modelling
+
+```{r}
+set.seed(333)
+smp_size <- floor(0.75*nrow(dfb_org))
+```
+
+
+```{r}
+train_ind <- sample(seq_len(nrow(dfb_org)), size = smp_size)
+dfb_train <- dfb_org[train_ind, ]
+dfb_test <- dfb_org[-train_ind, ]
+```
+
+
+```{r}
+fit_org <- lm(COUNT ~ MONTH+WEEKDAY+BADWEATHER+TEMP+ATEMP+HUMIDITY, data = dfb_train)
+summary(fit_org)
+predict_1 <-predict.lm(object = fit_org , newdata = dfb_test)
+dfb_test$prediction <- predict_1
+MAE_1 <- mean(abs(dfb_test$COUNT - dfb_test$prediction))
+RMSE_1 <- sqrt(mean((dfb_test$COUNT-dfb_test$prediction)^2))
+fit_new <- lm(COUNT ~ MONTH+WEEKDAY+BADWEATHER+TEMP+ATEMP+HUMIDITY+WINDSPEED, data = dfb_train)
+summary(fit_new)
+predict_2 <- predict.lm(object = fit_new , newdata = dfb_test)
+dfb_test$prediction <- predict_2
+MAE_2 <- mean(abs(dfb_test$COUNT - dfb_test$prediction))
+RMSE_2 <- sqrt(mean((dfb_test$COUNT-dfb_test$prediction)^2))
+```
+
+
+```{r}
+
+dfb_org$DATE <- ymd(dfb_org$DATE)
+dfb_train <- dfb_org %>% mutate(Year = year(DATE)) %>% filter(Year == 2011)
+dfb_test <- dfb_org %>% mutate(Year = year(DATE)) %>% filter(Year == 2012)
+
+model_1 <- lm(COUNT ~ MONTH+WEEKDAY+BADWEATHER+TEMP+ATEMP+HUMIDITY, data = dfb_train)
+summary(model_1)
+predict_model <-predict.lm(object = model_1 , newdata = dfb_test)
+dfb_test$prediction <- predict_model
+MAE_model <- mean(abs(dfb_test$COUNT - dfb_test$prediction))
+RMSE_model <- sqrt(mean((dfb_test$COUNT-dfb_test$prediction)^2))
+
+```
+
+
+```{r}
+
+dfb_train <- dfb_org %>% mutate(Year = year(DATE), Month = month(DATE)) %>% filter((DATE >= '2011-01-01' & DATE <= '2012-06-30'))
+dfb_test <- dfb_org %>% mutate(Year = year(DATE)) %>% filter(DATE >= '2012-07-01')
+
+model_2 <- lm(COUNT ~ MONTH+WEEKDAY+BADWEATHER+TEMP+ATEMP+HUMIDITY, data = dfb_train)
+summary(model_2)
+predict_model <-predict.lm(object = model_2 , newdata = dfb_test)
+dfb_test$prediction <- predict_model
+MAE_model_2 <- mean(abs(dfb_test$COUNT - dfb_test$prediction))
+RMSE_model_2 <- sqrt(mean((dfb_test$COUNT-dfb_test$prediction)^2))
+
+
+```
+
+
+
+
